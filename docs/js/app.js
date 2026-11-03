@@ -780,10 +780,11 @@ function viewPessoa(sub) {
   if (temFam) h += '<div class="mt">' + blocoEndereco(S.familias.get(p.familiaId)) + '</div>';
   if (!fams.length) h += '<div class="aviso amarelo mt">Nenhuma família cadastrada. <button type="button" class="btn peq sec" data-act="novaFamilia">Cadastrar família</button></div>';
   h += '</div>';
-  C.SECOES.forEach(function (sec) {
+  C.SECOES.forEach(function (sec, iSec) {
     h += '<div class="secao"><h2>' + esc(sec.titulo) + '</h2>';
     for (var n = sec.campos[0]; n <= sec.campos[1]; n++) h += campo40(C.CAMPOS[n - 1], p, fam, temFam);
     h += '</div>';
+    if (iSec === 0) h += blocoFiliacao(p, ro);
   });
   // condições acompanhadas (não entram no cálculo)
   h += '<div class="card mt2"><h2>Condições acompanhadas</h2><p class="contagem">Marcadores para os alertas e grupos. Não entram no cálculo de completude. O sistema não faz diagnósticos.</p><div class="grid g2">';
@@ -825,6 +826,17 @@ function campo40(c, p, fam, temFam) {
   var extra = fam_ ? '<div class="fam">' + (temFam ? '⌂ Dado da família — compartilhado com todos os integrantes' : 'Vincule uma família para preencher') + '</div>' : '';
   return '<div class="campo40" id="campo-' + c.n + '" data-status=""><div class="cab"><span class="num">' + c.n + '</span><span class="tit">' + esc(rotuloCampo(c)) + '</span><span class="st"></span></div>' + inp + '<div class="prob" hidden></div>' + extra + '</div>';
 }
+// Filiação (nome da mãe e do pai): dado de identificação do cadastro, fora do cálculo de completude
+function blocoFiliacao(p, ro) {
+  var dis = ro ? ' disabled' : '';
+  function linha(rot, nome, desc, rotDesc) {
+    var marcado = !!p[desc];
+    return '<div class="campo"><label class="rot" for="f_' + nome + '">' + rot + '</label><input type="text" id="f_' + nome + '" name="' + nome + '" value="' + esc(marcado ? '' : (p[nome] || '')) + '" autocomplete="off"' + (marcado ? ' disabled' : '') + dis + '>' +
+      '<label class="chk mt" style="margin-top:6px"><input type="checkbox" name="' + desc + '" data-filiacao="' + nome + '"' + (marcado ? ' checked' : '') + dis + '> ' + rotDesc + '</label></div>';
+  }
+  return '<div class="card mt2"><h2>Filiação</h2><p class="contagem">Ajuda a diferenciar pessoas com o mesmo nome. Não entra no cálculo de completude (referência 02/2023).</p><div class="grid g2">' +
+    linha('Nome da mãe', 'nome_mae', 'mae_desconhecida', 'Mãe desconhecida') + linha('Nome do pai', 'nome_pai', 'pai_desconhecido', 'Pai desconhecido') + '</div></div>';
+}
 function lerFormPessoa() {
   var fm = $('#formPessoa'); if (!fm) return;
   var R = S.rascunho, p = R.pessoa, fam = R.familia, E = fm.elements;
@@ -846,6 +858,8 @@ function lerFormPessoa() {
   });
   p.condicoes = {}; CONDICOES.forEach(function (c) { if (E['cond_' + c[0]].checked) p.condicoes[c[0]] = true; });
   p.dum = E.dum ? E.dum.value : ''; p.observacoes = E.observacoes.value.trim();
+  if (E.nome_mae) { p.mae_desconhecida = E.mae_desconhecida.checked; p.nome_mae = p.mae_desconhecida ? '' : E.nome_mae.value.trim(); }
+  if (E.nome_pai) { p.pai_desconhecido = E.pai_desconhecido.checked; p.nome_pai = p.pai_desconhecido ? '' : E.nome_pai.value.trim(); }
 }
 function atualizarPainelCompletude() {
   var box = $('#compbox'); if (!box || !S.rascunho || S.rascunho.tipo !== 'pessoa') return;
@@ -887,8 +901,8 @@ function irParaCampo(n) {
   el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1600);
   var inp = el.querySelector('input:not([hidden]),select'); if (inp) setTimeout(function () { try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); } }, 350);
 }
-var CHAVES_PESSOA = C.CAMPOS.filter(function (c) { return c.escopo === 'pessoa'; }).map(function (c) { return c.chave; }).concat(['familiaId', 'situacao', 'condicoes', 'dum', 'observacoes']);
-var ROT_PES = { familiaId: 'Família', situacao: 'Situação cadastral', condicoes: 'Condições acompanhadas', dum: 'DUM', observacoes: 'Observações' };
+var CHAVES_PESSOA = C.CAMPOS.filter(function (c) { return c.escopo === 'pessoa'; }).map(function (c) { return c.chave; }).concat(['familiaId', 'situacao', 'condicoes', 'dum', 'observacoes', 'nome_mae', 'mae_desconhecida', 'nome_pai', 'pai_desconhecido']);
+var ROT_PES = { familiaId: 'Família', situacao: 'Situação cadastral', condicoes: 'Condições acompanhadas', dum: 'DUM', observacoes: 'Observações', nome_mae: 'Nome da mãe', mae_desconhecida: 'Mãe desconhecida', nome_pai: 'Nome do pai', pai_desconhecido: 'Pai desconhecido' };
 C.CAMPOS.forEach(function (c) { ROT_PES[c.chave] = c.n + '. ' + c.rotulo; });
 
 async function salvarPessoa() {
@@ -1115,11 +1129,11 @@ function valorCampo(c, p, f) {
 async function exportar(t) {
   var D = derivados(), linhas = [];
   if (t === 'pessoas') {
-    linhas.push(['ID', 'Família', 'Microárea', 'Situação cadastral', 'Idade', 'Regra', 'Completude (%)', 'Classificação', 'Preenchidos', 'Aplicáveis', 'Pendências'].concat(C.CAMPOS.map(function (c) { return c.n + '. ' + rotuloCampo(c); })).concat(CONDICOES.map(function (c) { return c[1]; })));
+    linhas.push(['ID', 'Família', 'Microárea', 'Situação cadastral', 'Idade', 'Regra', 'Completude (%)', 'Classificação', 'Preenchidos', 'Aplicáveis', 'Pendências'].concat(C.CAMPOS.map(function (c) { return c.n + '. ' + rotuloCampo(c); })).concat(['Nome da mãe', 'Nome do pai']).concat(CONDICOES.map(function (c) { return c[1]; })));
     S.pessoas.forEach(function (p) {
       var f = S.familias.get(p.familiaId) || {}, r = D.comp.get(p.id);
       linhas.push([p.id, f.codigo || '', f.microarea || '', p.situacao || 'Ativo', r.idade == null ? '' : r.idade, r.faixa === 'maior' ? 'Maior que 6' : r.faixa === 'menor' ? 'Menor que 6' : 'Indefinida', r.faixa ? r.exibido : '', r.faixa ? COR_TXT[r.cor] : 'Indefinida', r.preenchidos, r.aplicaveis, r.pendentes.concat(r.condicionaisPendentes).map(function (c) { return c.n; }).join(',')]
-        .concat(C.CAMPOS.map(function (c) { return valorCampo(c, p, f); })).concat(CONDICOES.map(function (c) { return cond(p, c[0]) ? 'Sim' : 'Não'; })));
+        .concat(C.CAMPOS.map(function (c) { return valorCampo(c, p, f); })).concat([p.mae_desconhecida ? 'Desconhecida' : (p.nome_mae || ''), p.pai_desconhecido ? 'Desconhecido' : (p.nome_pai || '')]).concat(CONDICOES.map(function (c) { return cond(p, c[0]) ? 'Sim' : 'Não'; })));
     });
   } else if (t === 'familias') {
     var cols = ['codigo', 'responsavel', 'endereco', 'numero', 'complemento', 'bairro', 'cep', 'microarea', 'unidade', 'equipe', 'telefone', 'data_cadastro', 'situacao'].concat(CAMPOS_FAMILIA.filter(function (c) { return c.n >= 25; }).map(function (c) { return c.chave; })).concat(['integrantes', 'ultima_visita', 'observacoes']);
@@ -2863,6 +2877,7 @@ document.addEventListener('input', function (ev) {
 document.addEventListener('change', function (ev) {
   var t = ev.target;
   if (t.closest('#formPessoa')) {
+    if (t.hasAttribute('data-filiacao')) { var alvo = t.form.elements[t.getAttribute('data-filiacao')]; if (alvo) { alvo.disabled = t.checked; if (t.checked) alvo.value = ''; } }
     if (t.name === 'familiaId') {
       lerFormPessoa();
       var R = S.rascunho; R.familia = t.value && S.familias.get(t.value) ? clone(S.familias.get(t.value)) : {};
