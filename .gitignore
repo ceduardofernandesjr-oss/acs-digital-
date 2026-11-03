@@ -1,0 +1,5 @@
+node_modules/
+vendor-build/
+prod/dist/
+dist/
+e2e-prod/shots/

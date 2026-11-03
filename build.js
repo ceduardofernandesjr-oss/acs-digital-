@@ -1,0 +1,10 @@
+const fs=require('fs'),path=require('path');
+const d=p=>fs.readFileSync(path.join(__dirname,'src',p),'utf8');
+const ex=p=>fs.existsSync(path.join(__dirname,'src',p));
+const uis=['visitas-ui.js','busca-ui.js','pendencias-ui.js','agenda-ui.js'].filter(ex).map(d).join('\n');
+const motores=['busca.js','pendencias.js','agenda.js'].filter(ex).map(d).join('\n');
+const app=d('app.js').replace('/*__VISITAS_UI__*/',()=>uis);
+const out=d('shell.html').replace('/*__COMPLETUDE__*/',()=>d('completude.js')).replace('/*__PRODUTIVIDADE__*/',()=>d('produtividade.js')).replace('/*__MOTORES_V3__*/',()=>motores).replace('/*__APP__*/',()=>app);
+const dist=path.join(__dirname,'dist'); fs.mkdirSync(dist,{recursive:true});
+fs.writeFileSync(path.join(dist,'index.html'),out);
+console.log('dist/index.html',out.length,'bytes');
