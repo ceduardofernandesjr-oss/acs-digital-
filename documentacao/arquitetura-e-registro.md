@@ -1,7 +1,8 @@
 # ACS DIGITAL — Arquitetura e registro de desenvolvimento
 
-App piloto (v3): https://claude.ai/artifact/DRVSUKk823oTgvEX7kDNt6
-Última atualização: 02/11/2026 (v3 — Busca Rápida, Central de Pendências e Agenda Inteligente)
+App de produção: https://ceduardofernandesjr-oss.github.io/acs-digital-/ (ver 7e)
+App piloto (v3, só dados fictícios): https://claude.ai/artifact/DRVSUKk823oTgvEX7kDNt6
+Última atualização: 03/11/2026 (versão de produção: login, equipes, Supabase, uso sem internet)
 
 ---
 
@@ -258,9 +259,9 @@ O recálculo é automático: a cada tecla na ficha, a cada alteração da famíl
 | 1 Planejamento | Arquitetura, banco, relacionamentos, permissões, navegação | ✅ |
 | 2 Interface e cadastros | Identidade, painel, família, ficha 40 campos, regras por idade, completude | ✅ piloto |
 | 3 Rotina do ACS | Visitas ✅ · produtividade e metas ✅ (v2) · agenda ✅ (v3) · central de pendências ✅ (v3) · busca rápida ✅ (v3) · fichas de acompanhamento (PA, glicemia, pré-natal…) pendentes | quase completa |
-| 4 Recursos avançados | IA (ACS Assistente) · importação CSV/XLSX · mapa (Google Maps/COMO CHEGAR ✅ v2) · offline e sincronização | parcial (offline exige app de produção) |
+| 4 Recursos avançados | IA (ACS Assistente) · importação CSV/XLSX · mapa (Google Maps/COMO CHEGAR ✅ v2) · offline e sincronização ✅ (produção) | parcial |
 | 5 Relatórios | Relatórios com filtros, PDF/Excel | produtividade em PDF/Excel ✅ (v2) · CSV ✅ · relatórios de cadastro pendentes |
-| 6 Segurança | Supabase Auth, perfis, RLS por microárea, auditoria, backup | esquema pronto; implementação pendente |
+| 6 Segurança | Supabase Auth, perfis, RLS por equipe, auditoria, backup | ✅ produção (RLS por equipe/unidade, auditoria); backup exige plano pago |
 | 7 Validação | Testes completos, responsividade, documentação | contínuo |
 
 ## 7. Registro do que foi feito (v1 — 02/11/2026)
@@ -434,6 +435,42 @@ Desenvolvido e testado em três etapas, nesta ordem: busca → pendências → a
 - As pendências que se resolvem sozinhas (ex.: visita registrada) não ficam no histórico de resolvidas: o registro é a própria visita ou o histórico do cadastro. O histórico de resolvidas guarda as resoluções manuais.
 - A notificação do navegador depende de o ambiente permitir. Os lembretes dentro do app sempre funcionam.
 
+## 7e. Registro — Versão de produção (03/11/2026)
+
+**Endereço:** https://ceduardofernandesjr-oss.github.io/acs-digital-/ · **Código:** github.com/ceduardofernandesjr-oss/acs-digital- · **Banco:** Supabase `acs-digital` (ref `mmgseftxommheneyilzb`, São Paulo, plano gratuito).
+
+**Decisão de arquitetura:** reaproveitar 100% das telas e motores do piloto e trocar só a camada de plataforma (`prod/plataforma.js`), que oferece ao app a mesma interface de banco que ele já usava (coleções/documentos com assinatura em tempo real). Assim nada do que foi validado no piloto foi reescrito. A migração para Next.js (item 6 abaixo) deixou de ser necessária para publicar.
+
+**Banco (Supabase):**
+- `organizacoes` → `unidades` → `equipes`; `perfis` (papel administrador/coordenador/acs/visualizador, ativo, trocar_senha).
+- `documentos` (equipe_id, colecao, id, dados jsonb, versao, excluido, atualizado_em/por): uma linha por registro do app (familias, pessoas, visitas, agenda, pendencias, config, metas).
+- RLS: leitura por `privado.pode_acessar_equipe`; gravação exige perfil ativo, que não seja visualizador. `config` só admin/coordenação; `metas/<id>` só o dono, a coordenação ou a administração. Não existe política de exclusão física.
+- `salvar_documento(...)` (security invoker): grava com controle de versão e devolve `{conflito:true,...}` se a versão-base estiver desatualizada.
+- Gatilhos: versão/autor/data automáticos, chave imutável e `auditoria` (criou/alterou/excluiu/restaurou). A auditoria só é visível para a administração (organização) e para a coordenação (unidade).
+- `nomes_da_equipe(equipe)`: nomes dos profissionais com acesso à equipe, para mostrar a autoria (sem e-mail).
+- Tempo real: `documentos` está na publicação `supabase_realtime`.
+
+**Funções de servidor (Edge Functions, verify_jwt desligado, autenticação feita dentro da função):**
+- `configurar`: roda uma única vez. Exige o segredo `ACS_CODIGO_CONFIGURACAO` (comparação em tempo constante, com atraso a cada erro). Cria a organização, a unidade, a equipe e o 1º administrador, e recusa se já existir administrador.
+- `usuarios`: contexto, criar_usuario (com senha temporária e troca obrigatória), redefinir_senha, ativar/desativar (com bloqueio no Auth e pelo menos 1 administrador ativo), alterar, criar_unidade, criar_equipe. A coordenação só gerencia ACS e visualizadores da própria unidade.
+
+**App (GitHub Pages, PWA):**
+- Login, troca obrigatória da senha temporária, escolha de equipe (administração/coordenação), Minha conta (sincronização, conflitos, senha, sair), Usuários e equipes.
+- Cópia local em IndexedDB cifrada (AES-GCM 256, chave não exportável gerada no aparelho), separada por usuário e apagada ao sair ou quando a conta é desativada.
+- Fila de envio sem internet: a gravação é local e imediata, e o envio ocorre quando a internet volta (eventos online/visibilidade, a cada 2 min e no tempo real). O indicador mostra "N a enviar".
+- Conflitos: a versão do servidor é mantida e a do usuário fica em "Conflitos para revisar", com os campos diferentes e a escolha entre "aplicar a minha" ou "manter a atual". Recusas do servidor (permissão) aparecem no mesmo lugar.
+- Service worker guarda só os arquivos do app (nunca dados). Manifesto instalável e ícones próprios.
+- CSP: `script-src 'self'` e `connect-src` só para o projeto Supabase. Bibliotecas (supabase-js 2.118, xlsx 0.18.5, jsPDF 2.5.1, autotable 3.8.2) servidas localmente. Sem fontes externas.
+- Ajustes de texto em relação ao piloto (feitos no build, com verificação de ocorrência única): sem menções ao claude.ai, autoria pelo nome do profissional, configurações somente leitura para ACS, base fictícia só para administração/coordenação e mantida fora dos indicadores.
+
+**Testes:** 64 unitários + 55 verificações ponta a ponta no navegador com Supabase simulado (configuração, gravação por equipe, exportações sob CSP, gestão de usuários, cifragem local, troca de equipe, saída com limpeza, primeiro acesso do ACS, permissões, tempo real, trabalho sem internet, conflito, visualizador, desativação, abertura sem internet pelo app instalado). No Supabase real: matriz de RLS com usuários simulados e funções respondendo (código errado → 403; sem sessão → 401).
+
+**Limitações conhecidas:**
+- Recuperação de senha por e-mail não foi configurada: quem esquecer pede redefinição à coordenação.
+- No plano gratuito do Supabase o projeto pausa após 7 dias sem uso. Para uso real, é preciso plano pago com backups diários e contrato de tratamento de dados (DPA).
+- A cifragem local protege contra a leitura direta do armazenamento, mas não contra quem desbloqueia o aparelho com o app já aberto. Recomenda-se bloqueio de tela no aparelho.
+- Pendências automáticas com a mesma chave (tipo:alvo:data) resolvidas ao mesmo tempo por duas pessoas: vale a última gravação.
+
 ## 8. Pendências e próximos passos
 
 1. Conferir o pressuposto do item 4 com as imagens originais (campo 10 e opções).
@@ -441,6 +478,6 @@ Desenvolvido e testado em três etapas, nesta ordem: busca → pendências → a
 3. Agenda ✅ (v3). Próximo: agenda compartilhada da equipe e sincronização com o calendário do celular.
 4. Importação CSV/XLSX com mapeamento, pré-visualização, duplicidades e relatório de erros.
 5. Relatórios de cadastro (famílias, pessoas, completude) em PDF/Excel. Os de produtividade já existem (v2).
-6. Migração para Next.js + Supabase (PWA offline, perfis, RLS por microárea, multi-município).
+6. ~~Migração para Next.js + Supabase~~ → versão de produção publicada (7e). Próximo: RLS por microárea (se a instituição exigir), recuperação de senha por e-mail com SMTP institucional e plano pago com backup.
 7. ACS Assistente (IA), com revisão antes de salvar e sem envio de dados identificáveis sem base legal.
 8. Antes de usar dados reais: avaliação de segurança, autorização institucional e adequação à LGPD.
