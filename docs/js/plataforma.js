@@ -158,27 +158,69 @@
   async function processarFila() {
     if (!P.equipeId || !navigator.onLine || !L.fila.size) return;
     var itens = Array.from(L.fila.values()).sort(function (a, b) { return a.seq - b.seq; });
-    for (var i = 0; i < itens.length; i++) {
-      var it = itens[i];
-      if (L.fila.get(it.k) !== it) { deNovo = true; continue; }
-      var r = await sb.rpc('salvar_documento', { p_equipe: P.equipeId, p_colecao: it.colecao, p_id: it.id, p_dados: it.dados, p_versao_base: it.versaoBase, p_excluido: it.excluido });
-      if (r.error) {
-        if (transitorio(r.error)) { L.erroSync = r.error; return; }
-        await recusar(it, msgServidor(r.error));
-        continue;
+    for (var i = 0; i < itens.length; i += 100) {
+      var bloco = itens.slice(i, i + 100).filter(function (it) { if (L.fila.get(it.k) !== it) { deNovo = true; return false; } return true; });
+      if (!bloco.length) continue;
+      var resultados = null;
+      if (P.semLote || bloco.length === 1) resultados = null;
+      else {
+        var r = await sb.rpc('salvar_documentos', { p_equipe: P.equipeId, p_itens: bloco.map(function (it) { return { colecao: it.colecao, id: it.id, dados: it.dados, versao_base: it.versaoBase, excluido: it.excluido }; }) });
+        if (r.error) {
+          if (r.error.code === 'PGRST202') P.semLote = true;          // servidor sem a função de lote: envia um a um
+          else if (transitorio(r.error)) { L.erroSync = r.error; return; }
+        } else resultados = r.data;
       }
-      L.erroSync = null;
-      var res = r.data || {};
-      if (res.conflito) { await registrarConflito(it, res); continue; }
-      var ant = L.servidor.get(it.k);
-      var srv = { colecao: it.colecao, id: it.id, dados: it.excluido ? (ant ? ant.dados : {}) : it.dados, versao: res.versao, excluido: it.excluido, atualizado_em: res.atualizado_em };
-      L.servidor.set(it.k, srv);
-      await idbPut('docs', await cifrarLinha(it.k, srv));
-      var atual = L.fila.get(it.k);
-      if (atual === it) { L.fila.delete(it.k); await idbDel('fila', it.k); }
-      else if (atual) { atual.versaoBase = res.versao; await idbPut('fila', await cifrarLinha(atual.k, atual)); deNovo = true; }
-      recompor(it.k); agendarEmit(it.colecao);
+      for (var j = 0; j < bloco.length; j++) {
+        var it = bloco[j], res;
+        if (resultados) res = resultados[j] || { erro: 'XX000' };
+        else {
+          if (L.fila.get(it.k) !== it) { deNovo = true; continue; }
+          var r1 = await sb.rpc('salvar_documento', { p_equipe: P.equipeId, p_colecao: it.colecao, p_id: it.id, p_dados: it.dados, p_versao_base: it.versaoBase, p_excluido: it.excluido });
+          res = r1.error ? { erro: r1.error.code || '', mensagem: r1.error.message, transitorio: transitorio(r1.error) } : r1.data;
+        }
+        var parar = await aplicarResultado(it, res || {});
+        if (parar) return;
+      }
     }
+  }
+  // devolve true quando é preciso parar (falha de rede/servidor: tenta de novo depois)
+  async function aplicarResultado(it, res) {
+    if (res.erro != null) {
+      var err = { code: res.erro, message: res.mensagem };
+      if (res.transitorio === true || (res.transitorio == null && transitorio(err))) { L.erroSync = err; return true; }
+      await recusar(it, msgServidor(err));
+      return false;
+    }
+    L.erroSync = null;
+    if (res.conflito) { await registrarConflito(it, res); return false; }
+    var ant = L.servidor.get(it.k);
+    var srv = { colecao: it.colecao, id: it.id, dados: it.excluido ? (ant ? ant.dados : {}) : it.dados, versao: res.versao, excluido: it.excluido, atualizado_em: res.atualizado_em };
+    L.servidor.set(it.k, srv);
+    await idbPut('docs', await cifrarLinha(it.k, srv));
+    var atual = L.fila.get(it.k);
+    if (atual === it) { L.fila.delete(it.k); await idbDel('fila', it.k); }
+    else if (atual) { atual.versaoBase = res.versao; await idbPut('fila', await cifrarLinha(atual.k, atual)); deNovo = true; }
+    recompor(it.k); agendarEmit(it.colecao); avisarStatus();
+    return false;
+  }
+  // Gravação em lote (importação): tudo vai para a fila local de uma vez e é enviado em blocos
+  async function gravarLote(ops) {
+    if (!P.podeEscrever) throw { code: 'invalid_argument', message: 'Perfil somente para visualização.' };
+    var linhas = [], cols = new Set(), itens = [];
+    for (var i = 0; i < ops.length; i++) {
+      var o = ops[i];
+      if (o.col === 'config' && !PROD.podeConfigurar()) continue;
+      var k = chave(o.col, o.id), ant = L.fila.get(k), s0 = L.servidor.get(k);
+      var item = { k: k, colecao: o.col, id: String(o.id), dados: JSON.parse(JSON.stringify(o.dados)), excluido: false, versaoBase: ant ? ant.versaoBase : (s0 ? s0.versao : null), seq: ++L.seq, em: new Date().toISOString() };
+      L.fila.set(k, item); itens.push(item); linhas.push(await cifrarLinha(k, item)); cols.add(o.col);
+    }
+    if (linhas.length) await idbPut('fila', linhas);
+    itens.forEach(function (it) { recompor(it.k); });
+    cols.forEach(agendarEmit); avisarStatus();
+    if (navigator.onLine) await descarregar();
+    var recusadas = itens.filter(function (it) { return L.recusas.has(it.seq); }).length;
+    itens.forEach(function (it) { L.recusas.delete(it.seq); });
+    return { total: itens.length, pendentes: itens.filter(function (it) { return L.fila.get(it.k) === it; }).length, recusadas: recusadas };
   }
   async function tirarDaFila(it) {
     var atual = L.fila.get(it.k), usado = it;
@@ -263,6 +305,7 @@
     };
   }
   var DB = {
+    lote: gravarLote,
     collection: function (col) { return { onSnapshot: function (cb) { return ouvir({ col: col, cb: cb }); }, doc: function (id) { return documento(col, id); } }; },
     doc: function (caminho) { var i = caminho.indexOf('/'); return documento(caminho.slice(0, i), caminho.slice(i + 1)); }
   };

@@ -59,7 +59,9 @@
       complemento: palavras(f.complemento),
       familia: norm(f.codigo),
       resp: palavras(resp && resp.nome),
-      micro: norm(f.microarea)
+      micro: norm(f.microarea),
+      vita: dig(p.vitacareId),
+      vitaFam: dig(f.vitacare && f.vitacare.numero)
     };
   }
 
@@ -84,6 +86,8 @@
       if (qd.length >= 4 && ix.telFam && ix.telFam.indexOf(qd) >= 0) { campos['Telefone da família'] = 1; score = Math.max(score, 60); }
       if (qd.length >= 6 && ix.nasc && ix.nasc.replace(/-/g, '').indexOf(qd) >= 0) { campos['Data de nascimento'] = 1; score = Math.max(score, 60); }
       if (qd.length <= 2 && ix.micro && dig(ix.micro) === qd.padStart(2, '0')) { campos['Microárea'] = 1; score = Math.max(score, 40); }
+      if (qd.length >= 8 && ix.vita && ix.vita.indexOf(qd) === 0) { campos['Código VitaCare'] = 1; score = Math.max(score, ix.vita === qd ? 100 : 75); }
+      else if (qd.length >= 8 && ix.vitaFam && ix.vitaFam === qd) { campos['Família no VitaCare'] = 1; score = Math.max(score, 70); }
       if (qd.length <= 5 && ix.numero && dig(ix.numero) === qd) { campos['Número da residência'] = 1; score = Math.max(score, 45); }
       var lc = Object.keys(campos); return lc.length ? { score: score, campos: lc, semelhante: false } : null;
     }

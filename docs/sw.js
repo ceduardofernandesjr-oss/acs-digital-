@@ -1,5 +1,5 @@
 // ACS DIGITAL — service worker: guarda só os arquivos do aplicativo (nunca dados de pacientes)
-var VERSAO = 'acs-b05ff7e396';
+var VERSAO = 'acs-79e7196edb';
 var ARQUIVOS = ["./","index.html","manifest.webmanifest","icons/icon-192.png","icons/icon-512.png","js/config.js","vendor/supabase.js","js/plataforma.js","js/motores.js","js/app.js","vendor/xlsx.full.min.js","vendor/jspdf.umd.min.js","vendor/jspdf.plugin.autotable.min.js"];
 
 self.addEventListener('install', function (e) {

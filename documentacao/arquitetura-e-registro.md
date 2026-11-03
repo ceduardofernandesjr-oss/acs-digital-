@@ -2,7 +2,7 @@
 
 App de produção: https://ceduardofernandesjr-oss.github.io/acs-digital-/ (ver 7e)
 App piloto (v3, só dados fictícios): https://claude.ai/artifact/DRVSUKk823oTgvEX7kDNt6
-Última atualização: 03/11/2026 (versão de produção: login, equipes, Supabase, uso sem internet)
+Última atualização: 03/11/2026 (importação da Lista de Famílias do VitaCare)
 
 ---
 
@@ -471,12 +471,39 @@ Desenvolvido e testado em três etapas, nesta ordem: busca → pendências → a
 - A cifragem local protege contra a leitura direta do armazenamento, mas não contra quem desbloqueia o aparelho com o app já aberto. Recomenda-se bloqueio de tela no aparelho.
 - Pendências automáticas com a mesma chave (tipo:alvo:data) resolvidas ao mesmo tempo por duas pessoas: vale a última gravação.
 
+## 7f. Registro — Importação do VitaCare (03/11/2026)
+
+**Formato suportado:** "Lista de Famílias" do VitaCare (.xls, .xlsx ou .csv), com títulos (Área, Micro Área, Extraído), cabeçalho "Número de Família | Estado | Nome | Nome Logradouro (Endereço/Número/Complemento)" e rodapé "Processado por computador…".
+- A linha de família traz o nº da família, o 1º morador e o endereço. As linhas seguintes trazem os demais moradores.
+- O nome vem como "(código) NOME". O código da pessoa é o nº da família + sequência de 2 dígitos.
+- "Estado" é da **pessoa**: vazio, Óbito ou Mudou-se.
+- O arquivo **não traz** nascimento, sexo, CNS, CPF, telefone, bairro nem CEP. Esses campos ficam pendentes na completude.
+
+**Regras (`src/importacao.js`, 7 testes):**
+- Endereço separado por vírgula: logradouro, número (dígitos, com letra opcional, ou S/N) e o restante como complemento.
+- Responsável: morador de final 01 que esteja ativo; senão, o 1º ativo listado. Também há a opção "primeiro listado". Óbito e mudança nunca viram responsável.
+- **Idempotente:** reconhece famílias por `vitacare.numero` e pessoas por `vitacareId`. Reimportar só cria os novos e atualiza o que mudou no VitaCare desde a última importação (`vitacareNome`, `vitacare.enderecoOriginal`).
+- Correções feitas no app são preservadas, e a importação nunca reativa quem está em óbito ou mudou-se. Nada é apagado; quem saiu do arquivo só é informado na prévia.
+- Bairro e CEP podem ser preenchidos uma vez por rua (só completa o que está vazio). A microárea vem do arquivo e é editável. Os códigos F seguem a numeração existente.
+
+**Tela:** Configurações → Importação.
+- Prévia: arquivo, área, microárea, data de extração, totais, situações, novas/atualizadas/sem mudança, lista de atualizações e avisos por linha.
+- Confirmação obrigatória da autorização institucional antes de gravar.
+- O arquivo é lido no aparelho.
+- Cada importação fica registrada em `importacoes/<id>` (arquivo, data, autor, resumo).
+
+**Gravação em lote:** nova função `salvar_documentos(equipe, itens)` (até 200 por chamada, security invoker). Cada item passa por `salvar_documento`, com as mesmas regras de RLS, versão e conflito, e um erro não desfaz os outros (verificado no banco: chamada sem login → 42501 em cada item). A fila sem internet também passou a ser enviada em blocos de 100. No teste, 211 registros foram enviados em 3 chamadas, em cerca de 2 s.
+
+**Busca:** encontra pelo código VitaCare da pessoa e pelo nº da família.
+
+**Validação:** 72 testes unitários; teste ponta a ponta com .xls fictício (60 famílias e 150 moradores; reimportação sem duplicar; formato errado recusado; correção de um bug de foco nos campos de bairro e CEP). Com o arquivo real da microárea 01, a leitura deu 311 famílias e 699 moradores (10 óbitos, 3 mudanças), 1 família sem endereço e 0 erros. Só totais foram conferidos; nenhum dado de paciente foi exibido.
+
 ## 8. Pendências e próximos passos
 
 1. Conferir o pressuposto do item 4 com as imagens originais (campo 10 e opções).
 2. Fichas de acompanhamento (HAS com PA, DM com glicemia, pré-natal, criança, idoso, saúde mental, acamados).
 3. Agenda ✅ (v3). Próximo: agenda compartilhada da equipe e sincronização com o calendário do celular.
-4. Importação CSV/XLSX com mapeamento, pré-visualização, duplicidades e relatório de erros.
+4. Importação ✅ Lista de Famílias do VitaCare (7f). Próximo: lista com dados individuais (nascimento, sexo, CNS, telefone), se o VitaCare exportar.
 5. Relatórios de cadastro (famílias, pessoas, completude) em PDF/Excel. Os de produtividade já existem (v2).
 6. ~~Migração para Next.js + Supabase~~ → versão de produção publicada (7e). Próximo: RLS por microárea (se a instituição exigir), recuperação de senha por e-mail com SMTP institucional e plano pago com backup.
 7. ACS Assistente (IA), com revisão antes de salvar e sem envio de dados identificáveis sem base legal.

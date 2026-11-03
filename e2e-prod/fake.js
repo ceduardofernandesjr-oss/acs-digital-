@@ -150,6 +150,11 @@ function criar() {
       const fn = p.slice(13);
       if (!uid) return responder(route, 401, { code: 'PGRST301', message: 'JWT expired' });
       if (fn === 'salvar_documento') { const r = salvar(uid, body); return responder(route, r.status || 200, r.body); }
+      if (fn === 'salvar_documentos') {
+        S.lotes = (S.lotes || 0) + 1;
+        if (!Array.isArray(body.p_itens) || body.p_itens.length > 200) return responder(route, 400, { code: '22023', message: 'lote_grande' });
+        return responder(route, 200, body.p_itens.map(it => { const r = salvar(uid, { p_equipe: body.p_equipe, p_colecao: it.colecao, p_id: it.id, p_dados: it.dados && typeof it.dados === 'object' ? it.dados : null, p_versao_base: it.versao_base == null ? null : +it.versao_base, p_excluido: !!it.excluido }); return r.status ? { erro: r.body.code, mensagem: r.body.message } : r.body; }));
+      }
       if (fn === 'confirmar_troca_senha') { const pf = S.perfis.get(uid); if (pf) pf.trocar_senha = false; return route.fulfill({ status: 204, headers: CORS }); }
       if (fn === 'nomes_da_equipe') { if (!podeEquipe(uid, body.p_equipe, false)) return responder(route, 200, []); const e = S.equipes.find(x => x.id === body.p_equipe); return responder(route, 200, [...S.perfis.values()].filter(x => x.organizacao_id === e.organizacao_id && ((['acs', 'visualizador'].includes(x.papel) && x.equipe_id === e.id) || (x.papel === 'coordenador' && x.unidade_id === e.unidade_id) || x.papel === 'administrador')).map(x => ({ user_id: x.user_id, nome: x.nome, papel: x.papel }))); }
     }

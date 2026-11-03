@@ -270,6 +270,73 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
   await D.page.shot('09-offline-aberto');
   await D.ctx.setOffline(false); S.offline = false;
 
+  // ------------------------------------------------------------------ 11. Importação VitaCare
+  console.log('11. Importação da Lista de Famílias (VitaCare, arquivo fictício)');
+  const X = require(path.join(__dirname, '..', 'vendor-build', 'node_modules', 'xlsx'));
+  const ruasF = ['RUA DAS PALMEIRAS FICTICIA', 'TRAVESSA DO TESTE', 'AVENIDA EXEMPLO'], nomesF = ['ANA', 'BRUNO', 'CARLA', 'DIEGO', 'ELISA', 'FABIO'], sobren = ['SILVA FICTICIA', 'SOUZA TESTE', 'LIMA EXEMPLO'];
+  function planilhaVita(nFam, extra) {
+    const rows = [['Lista de Famílias'], ['Área:', '9999 - EQUIPE TESTE'], ['Micro Área: ', '07'], ['Extraído: ', '03.11.2026'], ['Número de Família (Número interno de Família)', 'Estado', 'Nome', 'Nome Logradouro (Endereço/Número/Complemento)', '']];
+    for (let i = 1; i <= nFam; i++) {
+      const num = String(900000000000 + i), nm = 1 + (i % 4);
+      for (let j = 1; j <= nm; j++) {
+        const nome = '(' + num + String(j).padStart(2, '0') + ') ' + nomesF[(i + j) % 6] + ' ' + sobren[i % 3];
+        const est = (i === 3 && j === 2) ? 'Óbito' : (i === 5 && j === 1) ? 'Mudou-se' : '';
+        rows.push(j === 1 ? [num, est, nome, ruasF[i % 3] + ', ' + (10 + i) + ', CASA ' + j, ''] : ['', est, nome, '', '']);
+      }
+    }
+    (extra || []).forEach(r => rows.push(r));
+    rows.push(['Processado por computador. Sistema de teste']);
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(rows), 'ListagemFamilias');
+    const f = path.join(SHOTS, 'vitacare-ficticio-' + nFam + '.xls'); X.writeFile(wb, f, { bookType: 'biff8' }); return f;
+  }
+  const arq1 = planilhaVita(60);
+  const famAntes = docs('familias').filter(d => d.equipe_id === eqAzul).length;
+  await A.page.setViewportSize({ width: 390, height: 844 }); await A.page.click('[data-pp=fechar]').catch(() => { });
+  await irPara(A.page, 'configuracoes'); await A.page.click('[data-act=importarAbrir]'); await A.page.waitForSelector('#impArq', { state: 'attached' });
+  await A.page.setInputFiles('#impArq', arq1);
+  await A.page.waitForSelector('[data-act=impConfirmar]', { timeout: 15000 });
+  const tPrev = await textoView(A.page);
+  ok(/60 famílias e 150 moradores/.test(tPrev), 'prévia: 60 famílias e 150 moradores lidos do .xls');
+  ok(/Microárea 07/.test(tPrev) && /1 óbito/.test(tPrev) && /1 mudou-se/.test(tPrev), 'prévia mostra microárea e situações do VitaCare');
+  ok(await A.page.$eval('[data-act=impConfirmar]', b => b.disabled), 'importar exige confirmar a autorização institucional');
+  await A.page.fill('[data-imp=bairro][data-i="0"]', 'Bairro Fictício'); await A.page.fill('[data-imp=cep][data-i="0"]', '20000-555'); await A.page.press('[data-imp=cep][data-i="0"]', 'Tab'); await A.page.waitForTimeout(200);
+  await A.page.check('[data-imp=autorizado]'); await A.page.waitForTimeout(150);
+  await A.page.shot('12-importar-previa');
+  const lotesAntes = S.lotes || 0, t0 = Date.now();
+  await A.page.click('[data-act=impConfirmar]');
+  await A.page.waitForSelector('[data-act=impOutro]', { timeout: 60000 });
+  const famVita = docs('familias').filter(d => d.equipe_id === eqAzul && d.dados.vitacare);
+  const pesVita = docs('pessoas').filter(d => d.equipe_id === eqAzul && d.dados.vitacareId);
+  ok(famVita.length === 60 && pesVita.length === 150, 'servidor recebeu 60 famílias e 150 moradores (' + famVita.length + '/' + pesVita.length + ')');
+  ok((S.lotes || 0) - lotesAntes >= 2 && (S.lotes || 0) - lotesAntes <= 4, 'envio em lotes: ' + ((S.lotes || 0) - lotesAntes) + ' chamadas para 211 registros, ' + (Date.now() - t0) + ' ms');
+  const fRua0 = famVita.find(d => d.dados.endereco === 'AVENIDA EXEMPLO');
+  ok(fRua0 && fRua0.dados.bairro === 'Bairro Fictício' && fRua0.dados.cep === '20000555', 'bairro e CEP preenchidos por rua');
+  ok(famVita.every(d => d.dados.microarea === '07' && /^F\d{4}$/.test(d.dados.codigo)), 'famílias com microárea 07 e código F sequencial');
+  const f3 = famVita.find(d => d.dados.vitacare.numero === '900000000003'), p3r = pesVita.find(d => d.id === f3.dados.responsavelId);
+  ok(p3r && p3r.dados.vitacareId === '90000000000301', 'responsável = morador de final 01');
+  ok(pesVita.find(d => d.dados.vitacareId === '90000000000302').dados.situacao === 'Óbito', 'óbito do VitaCare passou para a situação do morador');
+  const f5 = famVita.find(d => d.dados.vitacare.numero === '900000000005');
+  ok(f5.dados.responsavelId && pesVita.find(d => d.id === f5.dados.responsavelId).dados.vitacareId === '90000000000502', 'quem mudou-se não vira responsável');
+  ok(docs('importacoes').length === 1, 'importação registrada (arquivo, data, autor, resumo)');
+  await A.page.shot('13-importar-fim');
+  // busca pelo código VitaCare
+  await irPara(A.page, 'busca'); await A.page.fill('#buscaInput', '90000000000301'); await A.page.waitForTimeout(400);
+  ok((await textoView(A.page)).includes('Código VitaCare'), 'busca encontra o morador pelo código do VitaCare');
+  // reimportação: nada duplica; nova família e novo óbito entram
+  await irPara(A.page, 'familias'); await A.page.click('[data-act=abrirFamilia] >> nth=0').catch(() => { });
+  const arq2 = planilhaVita(61);
+  await irPara(A.page, 'configuracoes'); await A.page.click('[data-act=importarAbrir]'); await A.page.setInputFiles('#impArq', arq2);
+  await A.page.waitForSelector('[data-act=impConfirmar]', { timeout: 15000 });
+  const tPrev2 = await textoView(A.page);
+  ok(/Famílias\s*1\s*0\s*60/.test(tPrev2.replace(/\n/g, ' ').replace(/\s+/g, ' ').replace(/Famílias (\d+) (\d+) (\d+)/, 'Famílias $1 $2 $3')), 'reimportar: só 1 família nova, 60 sem mudança');
+  await A.page.check('[data-imp=autorizado]'); await A.page.waitForTimeout(100); await A.page.click('[data-act=impConfirmar]'); await A.page.waitForSelector('[data-act=impOutro]', { timeout: 60000 });
+  ok(docs('familias').filter(d => d.equipe_id === eqAzul && d.dados.vitacare).length === 61 && docs('pessoas').filter(d => d.equipe_id === eqAzul && d.dados.vitacareId).length === 152, 'sem duplicar: 61 famílias e 152 moradores');
+  // arquivo de outro formato é recusado com mensagem clara
+  const wbx = X.utils.book_new(); X.utils.book_append_sheet(wbx, X.utils.aoa_to_sheet([['Nome', 'Idade'], ['Teste', 30]]), 'x'); const arqX = path.join(SHOTS, 'outro.xlsx'); X.writeFile(wbx, arqX);
+  await A.page.click('[data-act=impOutro]'); await A.page.setInputFiles('#impArq', arqX); await A.page.waitForSelector('.aviso.vermelho', { timeout: 10000 });
+  ok((await textoView(A.page)).includes('Formato não reconhecido'), 'planilha de outro formato é recusada com explicação');
+  ok(famAntes + 61 === docs('familias').filter(d => d.equipe_id === eqAzul).length, 'famílias cadastradas antes da importação foram preservadas');
+
   // ------------------------------------------------------------------ desktop
   await A.page.setViewportSize({ width: 1280, height: 800 }); await A.page.click('[data-pp=fechar]').catch(() => { });
   await irPara(A.page, 'painel'); await A.page.waitForTimeout(400); await A.page.shot('10-desktop');

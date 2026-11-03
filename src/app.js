@@ -283,7 +283,7 @@ var VIEWS = [
   ['familias', 'Famílias', 'fam'], ['pessoas', 'Pessoas', 'pessoa'],
   ['visitas', 'Visitas domiciliares', 'visita'], ['completude', 'Completude cadastral', 'comp'], ['configuracoes', 'Configurações', 'conf']
 ];
-var PROXIMAS = ['Fichas de acompanhamento (PA, glicemia, pré-natal…)', 'Território (mapa)', 'Relatórios de cadastro', 'Importação CSV/XLSX', 'ACS Assistente (IA)'];
+var PROXIMAS = ['Fichas de acompanhamento (PA, glicemia, pré-natal…)', 'Território (mapa)', 'Relatórios de cadastro', 'ACS Assistente (IA)'];
 
 function montarNavegacao() {
   var sb = '<div class="brand"><div class="logo">' + logoSvg() + '</div><div>ACS DIGITAL<small>Gestão do Agente Comunitário</small></div></div>';
@@ -428,6 +428,7 @@ function render() {
     else if (t === 'visitaForm') { html = viewVisitaForm(S.sub); titulo = S.sub.id ? 'Editar visita' : 'Registrar visita'; }
     else if (t === 'lista') { html = viewListaAlerta(S.sub); titulo = S.sub.titulo; }
     else if (t === 'agendaForm') { html = viewAgendaForm(S.sub); titulo = S.sub.id ? 'Compromisso' : 'Novo compromisso'; }
+    else if (t === 'importar') { html = viewImportar(); titulo = 'Importar do VitaCare'; }
   } else {
     html = ({ painel: viewPainel, busca: viewBusca, pendencias: viewPendencias, agenda: viewAgenda, familias: viewFamilias, pessoas: viewPessoas, visitas: viewVisitas, completude: viewCompletude, configuracoes: viewConfig }[S.view] || viewPainel)();
   }
@@ -453,7 +454,7 @@ function viewPainel() {
   function conta(fn) { return A.filter(fn).length; }
   var h = '<div class="buscacampo buscapainel">' + ico('busca', 'width="20" height="20" aria-hidden="true"') + '<input type="search" id="buscaPainel" placeholder="' + PLACEHOLDER_BUSCA + '" autocomplete="off" aria-label="' + PLACEHOLDER_BUSCA + '"></div>';
   if (!S.pessoas.size && !S.familias.size) {
-    h += '<div class="card"><h2>Bem-vindo(a) ao ACS DIGITAL</h2><p>Ainda não há cadastros. Comece criando uma família e adicionando os integrantes. Para conhecer o sistema antes, carregue a base demonstrativa fictícia em Configurações.</p><div class="btns"><button class="btn" data-act="novaFamilia">' + ico('add', 'width="18" height="18"') + 'Nova família</button><button class="btn sec" data-nav="configuracoes">Ir para Configurações</button></div></div>';
+    h += '<div class="card"><h2>Bem-vindo(a) ao ACS DIGITAL</h2><p>Ainda não há cadastros. Comece criando uma família e adicionando os integrantes, ou importe a Lista de Famílias do VitaCare em Configurações. Para conhecer o sistema antes, carregue a base demonstrativa fictícia em Configurações.</p><div class="btns"><button class="btn" data-act="novaFamilia">' + ico('add', 'width="18" height="18"') + 'Nova família</button><button class="btn sec" data-nav="configuracoes">Ir para Configurações</button></div></div>';
   }
   h += cardRotinaHoje();
 
@@ -613,7 +614,7 @@ function viewFamilia(id) {
   }
   h += '</div>';
   h += '<div class="card"><h2>Dados da família e do domicílio</h2><dl class="kv">';
-  [['Código', f.codigo], ['Unidade de saúde', f.unidade], ['Equipe', f.equipe], ['Telefone de contato', f.telefone, 'tel'], ['CEP', f.cep], ['Data do cadastro', fmtData(f.data_cadastro)], ['Situação', f.situacao || 'Ativa']].forEach(function (kv) { h += '<dt>' + esc(kv[0]) + '</dt><dd>' + (kv[2] === 'tel' && kv[1] ? '<span class="telwa-txt">' + esc(fmtTelefone(kv[1])) + iconeWhatsApp(kv[1]) + '</span>' : esc(kv[1] || '—')) + '</dd>'; });
+  [['Código', f.codigo], ['Unidade de saúde', f.unidade], ['Equipe', f.equipe], ['Telefone de contato', f.telefone, 'tel'], ['CEP', f.cep], ['Data do cadastro', fmtData(f.data_cadastro)], ['Situação', f.situacao || 'Ativa']].concat(f.vitacare && f.vitacare.numero ? [['Família no VitaCare', f.vitacare.numero]] : []).forEach(function (kv) { h += '<dt>' + esc(kv[0]) + '</dt><dd>' + (kv[2] === 'tel' && kv[1] ? '<span class="telwa-txt">' + esc(fmtTelefone(kv[1])) + iconeWhatsApp(kv[1]) + '</span>' : esc(kv[1] || '—')) + '</dd>'; });
   CAMPOS_FAMILIA.filter(function (c) { return c.n >= 25; }).forEach(function (c) { h += '<dt>' + esc(c.rotulo.replace('Família — ', '')) + '</dt><dd>' + esc(f[c.chave] != null && f[c.chave] !== '' ? f[c.chave] : '—') + '</dd>'; });
   if (f.observacoes) h += '<dt>Observações</dt><dd>' + esc(f.observacoes) + '</dd>';
   h += '</dl></div>';
@@ -1077,6 +1078,7 @@ function viewConfig() {
   h += configPendenciasHtml() + configAgendaHtml();
   h += '<div class="salvarbar" style="position:static"><button type="submit" class="btn"' + (ro ? ' disabled' : '') + '>Salvar configurações</button></div></form>';
 
+  if (!somenteLeitura()) h += '<div class="card mt2"><h2>Importação</h2><p class="contagem">Traga famílias e moradores da Lista de Famílias do VitaCare (.xls, .xlsx ou .csv). Importar de novo atualiza sem duplicar.</p><div class="btns"><button class="btn sec" data-act="importarAbrir">' + ico('add', 'width="18" height="18"') + 'Importar do VitaCare</button></div></div>';
   h += '<div class="card mt2"><h2>Exportação</h2><p class="contagem">Arquivos CSV (separador “;”), abrem no Excel e no Google Planilhas.</p><div class="btns">' +
     (S.downloads ? '<button class="btn sec" data-act="exportar" data-t="familias">' + ico('baixar', 'width="18" height="18"') + 'Famílias</button><button class="btn sec" data-act="exportar" data-t="pessoas">' + ico('baixar', 'width="18" height="18"') + 'Pessoas e completude</button><button class="btn sec" data-act="exportar" data-t="visitas">' + ico('baixar', 'width="18" height="18"') + 'Visitas</button>' : '<p class="contagem">Download indisponível nesta visualização.</p>') + '</div></div>';
 

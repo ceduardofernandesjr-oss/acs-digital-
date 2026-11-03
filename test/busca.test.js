@@ -81,3 +81,12 @@ test('filtro adicional e busca de famílias', () => {
 test('lev1', () => {
   assert.ok(B.lev1('daniela', 'danyela')); assert.ok(B.lev1('maria', 'mari')); assert.ok(!B.lev1('maria', 'mario1'));
 });
+
+test('busca pelo código do VitaCare (pessoa e família)', () => {
+  const fams = new Map([['f1', { codigo: 'F0001', endereco: 'Rua Teste', vitacare: { numero: '100000000001' } }]]);
+  const pes = [{ id: 'p1', nome: 'Ana Ficticia', familiaId: 'f1', vitacareId: '10000000000101' }, { id: 'p2', nome: 'Bruno Ficticio', familiaId: 'f1', vitacareId: '10000000000102' }];
+  const r1 = B.buscar('10000000000102', pes, fams);
+  assert.strictEqual(r1[0].pessoa.id, 'p2'); assert.ok(r1[0].campos.includes('Código VitaCare'));
+  assert.strictEqual(B.buscar('100000000001', pes, fams).length, 2, 'nº da família encontra os moradores');
+  assert.strictEqual(B.buscarFamilias('100000000001', fams, new Map())[0].familia.codigo, 'F0001');
+});

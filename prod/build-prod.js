@@ -14,7 +14,7 @@ function trocar(txt, de, para, nome) {
 }
 
 // --- app (telas) com ajustes de produção ---
-const uis = ['visitas-ui.js', 'busca-ui.js', 'pendencias-ui.js', 'agenda-ui.js'].map(ler).join('\n');
+const uis = ['visitas-ui.js', 'busca-ui.js', 'pendencias-ui.js', 'agenda-ui.js', 'importacao-ui.js'].map(ler).join('\n');
 let app = ler('app.js').replace('/*__VISITAS_UI__*/', () => uis);
 const T = [
   ['semBanco', "O banco de dados não está disponível nesta visualização. Abra o ACS DIGITAL pelo link no claude.ai, com sua conta, para salvar e consultar cadastros.", 'Não foi possível abrir os dados. Recarregue a página ou saia e entre novamente.'],
@@ -38,7 +38,7 @@ const T = [
 T.forEach(([nome, de, para]) => { app = trocar(app, de, para, nome); });
 if (/claude\.ai|claude\.use\('/.test(app.replace("claude.use('db')", '').replace("claude.use('user')", '').replace("claude.use('downloads')", ''))) throw new Error('Ainda há menções à plataforma do piloto no app');
 
-const motores = ['completude.js', 'produtividade.js', 'busca.js', 'pendencias.js', 'agenda.js'].map(ler).join('\n');
+const motores = ['completude.js', 'produtividade.js', 'busca.js', 'pendencias.js', 'agenda.js', 'importacao.js'].map(ler).join('\n');
 const plataforma = fs.readFileSync(path.join(__dirname, 'plataforma.js'), 'utf8');
 const css = fs.readFileSync(path.join(__dirname, 'plataforma.css'), 'utf8');
 const cfgJs = 'window.ACS_CONFIG = ' + JSON.stringify(CONFIG) + ';\n';
