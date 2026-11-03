@@ -1134,7 +1134,7 @@
 
 /* ACS DIGITAL — motor de importação (funções puras, sem dependência de tela)
  * Formato suportado: VitaCare "Lista de Famílias" (.xls/.xlsx/.csv), lido como matriz de linhas.
- *   Títulos: "Lista de Famílias" / "Área: | 4153 - JADE" / "Micro Área: | 01" / "Extraído: | 03.11.2026"
+ *   Títulos: "Lista de Famílias" / "Área: | <código> - <equipe>" / "Micro Área: | 01" / "Extraído: | 03.11.2026"
  *   Cabeçalho: Número de Família | Estado | Nome | Nome Logradouro (Endereço/Número/Complemento)
  *   Linha de família: nº da família + 1º morador + endereço; linhas seguintes: demais moradores.
  *   Nome: "(<nº família><seq 2 dígitos>) NOME COMPLETO"; Estado: vazio | Óbito | Mudou-se (da pessoa).
